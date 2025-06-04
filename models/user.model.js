@@ -1,29 +1,49 @@
-import mongoose from 'mongoose';
+const mongoose = require("mongoose");
 
 const userSchema = new mongoose.Schema({
   nom: {
     type: String,
-    required: [true, "Le nom est obligatoire"]
+    required: [true, "Le nom est obligatoire"],
+    trim: true
   },
-  prénom: {
+  prenom: {
     type: String,
-    required: [true, "Le prénom est obligatoire"]
+    required: [true, "Le prénom est obligatoire"],
+    trim: true
   },
   email: {
     type: String,
     unique: true,
     required: [true, "L'email est obligatoire"],
-    match: [/^\S+@\S+\.\S+$/, "Email invalide"] // Validation format email
+    trim: true,
+    lowercase: true,
+    match: [/.+@.+\..+/, "Format d'email invalide"]
+  },
+  mot_de_passe: {
+    type: String,
+    required: [true, "Le mot de passe est obligatoire"]
+
   },
   pays_residence: {
     type: String,
-    required: [true, "Le pays est obligatoire"]
+    trim: true,
+    default: null
   },
-  numéro_téléphone: {
+  tel: {
     type: String,
-    match: [/^[+]?[(]?[0-9]{3}[)]?[-\s.]?[0-9]{3}[-\s.]?[0-9]{4,6}$/, "Numéro invalide"]
+    required: [true, "Numéro de téléphone requis"],
+    trim: true
+
+  },
+  role: {
+    type: String,
+    enum: ['participant', 'admin'],
+    required: [true, "Le rôle est obligatoire"],
+    default: 'participant'
   }
+}, {
+  timestamps: true
 });
 
-// MongoDB crée automatiquement un '_id' unique (clé primaire)
-export default mongoose.model('Utilisateur', userSchema);
+
+module.exports = mongoose.model("User", userSchema);
