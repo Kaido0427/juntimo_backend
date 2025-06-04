@@ -1,13 +1,16 @@
-import mongoose from 'mongoose';
+const mongoose = require('mongoose');
 
-export const connectDB = async () => {
-  try {
-    await mongoose.connect("mongodb+srv://derrickstack:del7F%40%2FQ%2C%7D2jk%21@cluster0.dxp1z6c.mongodb.net/ma-base", {
-      
-    });
-    console.log(" Connecté à MongoDB avec succès");
-  } catch (err) {
-    console.error(" Erreur de connexion MongoDB :", err.message);
-    process.exit(1); // Arrête l'application si la connexion échoue
-  }
+const connectDB = async () => {
+    try {
+        mongoose.set('strictQuery', false);
+        await mongoose.connect('mongodb://localhost:27017/juntimo', {
+           
+        });
+        console.log('Vous êtes connecté à la Base de données');
+    } catch (err) {
+        console.error('Erreur de connexion MongoDB:', err);
+        process.exit(1);  
+    }
 };
+
+module.exports = connectDB;
