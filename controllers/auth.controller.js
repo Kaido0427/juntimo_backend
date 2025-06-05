@@ -1,102 +1,103 @@
-// controllers/auth.controller.js
 
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const asyncHandler = require('express-async-handler');
 const User = require('../models/user.model');
-
-console.log('Test PayPal Configuration...');
-console.log('Client ID:', process.env.PAYPAL_CLIENT_ID ? 'OK' : 'MANQUANT');
-console.log('Client Secret:', process.env.PAYPAL_CLIENT_SECRET ? 'OK' : 'MANQUANT');
-console.log('Mode:', process.env.PAYPAL_MODE);
 const paypal = require('@paypal/checkout-server-sdk');
 
-// === Configuration PayPal ===
+// --- Configuration PayPal simplifiée ---
 const paypalClient = (() => {
     const clientId = process.env.PAYPAL_CLIENT_ID;
     const clientSecret = process.env.PAYPAL_CLIENT_SECRET;
-
     if (!clientId || !clientSecret) {
-        console.error('ERREUR: Variables PayPal manquantes dans .env');
+        console.error('❌ PAYPAL_CLIENT_ID ou PAYPAL_CLIENT_SECRET manquant(e)');
         return null;
     }
-
-    const environment =
+    const env =
         process.env.PAYPAL_MODE === 'sandbox'
-            ? new paypal.core.LiveEnvironment(clientId, clientSecret)
-            : new paypal.core.SandboxEnvironment(clientId, clientSecret);
-
-    return new paypal.core.PayPalHttpClient(environment);
+            ? new paypal.core.SandboxEnvironment(clientId, clientSecret)
+            : new paypal.core.LiveEnvironment(clientId, clientSecret);
+    return new paypal.core.PayPalHttpClient(env);
 })();
 
 const signToken = (userId) => {
     if (!process.env.JWT_SECRET) {
-        throw new Error('JWT_SECRET manquant dans les variables d\'environnement');
+        throw new Error('JWT_SECRET manquant');
     }
-    return jwt.sign({ id: userId }, process.env.JWT_SECRET, {
-        expiresIn: '7d',
-    });
+    return jwt.sign({ id: userId }, process.env.JWT_SECRET, { expiresIn: '7d' });
 };
+
 
 // === Inscription (avec paiement PayPal) ===
 module.exports.register = asyncHandler(async (req, res) => {
-    const { nom, prenom, email, mot_de_passe, tel, pays_residence } = req.body;
-
-    // Validation des champs requis
+    console.log("🔔 [register] Début de la requête d'inscription");
+    
+    // 1) Récupération des champs
+    const { nom, prenom, email, mot_de_passe, tel, pays_residence, fraisInscription, devise } = req.body;
+    console.log("📥 [register] Données reçues :", {
+        nom, prenom, email, tel, pays_residence, fraisInscription, devise
+    });
+    
+    // 2) Validation des champs requis
     if (!nom || !prenom || !email || !mot_de_passe) {
-        return res.status(400).json({
-            message: "Nom, prénom, email et mot de passe sont requis."
-        });
+        console.log("❌ [register] Champs requis manquants");
+        return res.status(400).json({ message: "Nom, prénom, email et mot de passe sont requis." });
     }
-
-    // Validation de l'email
+    console.log("✅ [register] Champs obligatoires présents");
+    
+    // 3) Validation du format de l'email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
+        console.log("❌ [register] Format d'email invalide :", email);
         return res.status(400).json({ message: "Format d'email invalide." });
     }
-
-    // Validation du mot de passe (minimum 6 caractères)
+    console.log("✅ [register] Format d'email valide :", email);
+    
+    // 4) Validation du mot de passe
     if (mot_de_passe.length < 8) {
-        return res.status(400).json({
-            message: "Le mot de passe doit contenir au moins 6 caractères."
-        });
+        console.log("❌ [register] Mot de passe trop court (longueur =", mot_de_passe.length, ")");
+        return res.status(400).json({ message: "Le mot de passe doit contenir au moins 8 caractères." });
     }
-
-    // Vérification PayPal client
+    console.log("✅ [register] Mot de passe accepté (longueur =", mot_de_passe.length, ")");
+    
+    // 5) Vérification de la configuration PayPal
     if (!paypalClient) {
-        return res.status(500).json({
-            message: "Configuration PayPal manquante. Contactez l'administrateur."
-        });
+        console.log("❌ [register] paypalClient non configuré");
+        return res.status(500).json({ message: "Configuration PayPal manquante." });
     }
-
+    console.log("✅ [register] paypalClient configuré");
+    
     try {
-        // 1) Vérifier qu'aucun utilisateur n'a déjà cet email
+        // 6) Vérification de l'unicité de l'email
         const existingUser = await User.findOne({ email: email.toLowerCase() });
+        console.log("🔍 [register] Recherche d'utilisateur existant pour l'email :", email.toLowerCase());
         if (existingUser) {
+            console.log("❌ [register] Email déjà utilisé par un autre utilisateur");
             return res.status(400).json({ message: "Cet email est déjà utilisé." });
         }
-
-        // 2) Hasher le mot de passe
-        const saltRounds = 12; // Augmenté pour plus de sécurité
+        console.log("✅ [register] Email disponible :", email.toLowerCase());
+        
+        // 7) Hashage du mot de passe
+        const saltRounds = 12;
+        console.log("🔒 [register] Hashage du mot de passe (saltRounds =", saltRounds, ")");
         const hashedPassword = await bcrypt.hash(mot_de_passe, saltRounds);
-
-        // 3) Créer la commande PayPal
-        const amountValue = req.body.fraisInscription || '50.00';
-        const currency = req.body.devise || 'USD';
-
-        // Validation du montant
+        console.log("✅ [register] Mot de passe hashé :", hashedPassword);
+        
+        // 8) Préparation de la commande PayPal
+        const amountValue = fraisInscription || '50.00';
+        const currency = devise || 'USD';
+        console.log("💰 [register] Montant des frais d'inscription :", amountValue, currency);
         if (isNaN(parseFloat(amountValue)) || parseFloat(amountValue) <= 0) {
+            console.log("❌ [register] Montant invalide :", amountValue);
             return res.status(400).json({ message: "Montant des frais invalide." });
         }
-
+        
+        const baseUrl = process.env.BASE_URL;
         const orderRequest = {
             intent: 'CAPTURE',
             purchase_units: [
                 {
-                    amount: {
-                        currency_code: currency,
-                        value: amountValue,
-                    },
+                    amount: { currency_code: currency, value: amountValue },
                     description: "Frais d'inscription au service JUNTIMO",
                 },
             ],
@@ -104,16 +105,24 @@ module.exports.register = asyncHandler(async (req, res) => {
                 brand_name: 'JUNTIMO',
                 landing_page: 'LOGIN',
                 user_action: 'PAY_NOW',
-                return_url: `${process.env.BASE_URL}/auth/paypalSuccess`,
-                cancel_url: `${process.env.BASE_URL}/auth/paypalCancel`,
+                return_url: `${baseUrl}/auth/paypalSuccess`,
+                cancel_url: `${baseUrl}/auth/paypalCancel`,
             },
         };
-
+        console.log("📦 [register] OrderRequest PayPal préparé :", orderRequest);
+        
+        // 9) Création de la commande PayPal
         const request = new paypal.orders.OrdersCreateRequest();
         request.requestBody(orderRequest);
+        console.log("🚀 [register] Envoi de la requête de création de commande PayPal");
         const order = await paypalClient.execute(request);
-
-        // 4) Stocker temporairement les données d'inscription en session
+        console.log("✅ [register] Commande PayPal créée :", order.result.id);
+        
+        // 10) Sauvegarde dans la session
+        if (!req.session) {
+            console.log("❌ [register] Problème de session : req.session absent");
+            return res.status(500).json({ message: "Erreur de configuration de session." });
+        }
         req.session.pendingUser = {
             nom: nom.trim(),
             prenom: prenom.trim(),
@@ -122,81 +131,137 @@ module.exports.register = asyncHandler(async (req, res) => {
             tel: tel?.trim(),
             pays_residence: pays_residence?.trim(),
             role: 'participant',
-            createdAt: new Date()
+            createdAt: new Date(),
         };
         req.session.pendingOrderId = order.result.id;
+        console.log("💾 [register] pendingUser et pendingOrderId stockés en session :", {
+            pendingUser: req.session.pendingUser,
+            pendingOrderId: req.session.pendingOrderId,
+        });
+        console.log("🔑 [register] SessionID après création :", req.sessionID);
 
-        // 5) Renvoyer l'URL d'approbation PayPal au front
+        // 11) Récupération du lien d'approbation
         const approveLink = order.result.links.find((l) => l.rel === 'approve')?.href;
-
         if (!approveLink) {
-            return res.status(500).json({ message: "Erreur lors de la création de la commande PayPal." });
+            console.log("❌ [register] Lien d'approbation PayPal introuvable dans les links :", order.result.links);
+            return res.status(500).json({ message: "Impossible de récupérer le lien PayPal." });
         }
-
+        console.log("✅ [register] Lien d'approbation PayPal obtenu :", approveLink);
+        
+        // 12) Réponse au front
+        console.log("📤 [register] Réponse envoyée au front avec approveLink et orderId");
         res.status(200).json({
+            success: true,
             approveLink,
-            orderId: order.result.id
+            orderId: order.result.id,
+            message: "Commande PayPal créée. Redirigez l'utilisateur pour le paiement.",
         });
 
+        
     } catch (error) {
-        console.error('Erreur lors de l\'inscription:', error);
-        res.status(500).json({
-            message: "Erreur lors du processus d'inscription.",
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
+        console.error("❌ [register] Erreur lors de l'inscription :", error);
+        return res.status(500).json({ success: false, message: "Erreur interne." });
     }
 });
 
 // === Callback PayPal Success ===
 module.exports.paypalSuccess = asyncHandler(async (req, res) => {
-    const { token: orderId } = req.query;
+    console.log("🔔 [paypalSuccess] Début du callback PayPal Success");
+    console.log("🔑 [paypalSuccess] SessionID reçue :", req.sessionID);
 
+    
+    // 1) Récupération des paramètres PayPal
+    const orderId = req.query.token || req.query.paymentId || req.query.orderID || req.query.id;
+    console.log("📥 [paypalSuccess] Paramètres reçus :", req.query);
+    console.log("🎯 [paypalSuccess] orderId extrait :", orderId);
+    
     if (!orderId) {
-        return res.status(400).json({ message: "ID de commande manquant." });
-    }
-
-    // 1) Vérifier que l'orderId correspond à ce qui est en session
-    if (!req.session.pendingOrderId || req.session.pendingOrderId !== orderId) {
+        console.log("❌ [paypalSuccess] orderId manquant dans les paramètres PayPal");
         return res.status(400).json({
-            message: "Commande PayPal non reconnue ou expirée."
+            message: "ID de commande manquant.",
+            receivedParams: req.query,
+            expectedParams: ['token', 'paymentId', 'orderID', 'id'],
         });
     }
-
-    // Vérifier l'expiration (ex: 30 minutes)
+    
+    // 2) Vérification de la session et de l'orderId en session
+    console.log("🔍 [paypalSuccess] Vérification de la session et pendingOrderId en session");
+    if (!req.session || !req.session.pendingOrderId) {
+        console.log("❌ [paypalSuccess] Session expirée ou pendingOrderId manquant :", {
+            hasSession: !!req.session,
+            hasPendingOrder: !!req.session?.pendingOrderId,
+            hasPendingUser: !!req.session?.pendingUser
+        });
+        return res.status(400).json({
+            message: "Session expirée ou commande non trouvée. Veuillez recommencer l'inscription.",
+            sessionData: {
+                hasSession: !!req.session,
+                hasPendingOrder: !!req.session?.pendingOrderId,
+                hasPendingUser: !!req.session?.pendingUser,
+            },
+        });
+    }
+    if (req.session.pendingOrderId !== orderId) {
+        console.log("❌ [paypalSuccess] orderId reçu ne correspond pas à celui en session :", {
+            attendu: req.session.pendingOrderId,
+            reçu: orderId
+        });
+        return res.status(400).json({
+            message: "Commande PayPal non reconnue.",
+            expected: req.session.pendingOrderId,
+            received: orderId,
+        });
+    }
+    console.log("✅ [paypalSuccess] orderId correspond à la session");
+    
+    // 3) Vérification de l'âge de la session (30 min max)
     const sessionAge = new Date() - new Date(req.session.pendingUser?.createdAt || 0);
-    if (sessionAge > 30 * 60 * 1000) { // 30 minutes
+    console.log("⏱️ [paypalSuccess] Âge de la session (ms) :", sessionAge);
+    if (sessionAge > 30 * 60 * 1000) {
+        console.log("❌ [paypalSuccess] Session expirée (>30min), age :", sessionAge);
         delete req.session.pendingUser;
         delete req.session.pendingOrderId;
-        return res.status(400).json({ message: "Session expirée. Veuillez recommencer l'inscription." });
+        return res.status(400).json({
+            message: "Session expirée. Veuillez recommencer l'inscription.",
+            sessionAge: Math.round(sessionAge / 1000) + ' secondes',
+        });
     }
-
+    console.log("✅ [paypalSuccess] Session toujours valide (age <30min)");
+    
+    // 4) Capture du paiement PayPal
+    if (!paypalClient) {
+        console.log("❌ [paypalSuccess] paypalClient non configuré");
+        return res.status(500).json({ message: "Configuration PayPal manquante." });
+    }
     try {
-        // 2) Capturer le paiement
+        console.log("🚀 [paypalSuccess] Envoi de la requête de capture du paiement pour orderId :", orderId);
         const captureRequest = new paypal.orders.OrdersCaptureRequest(orderId);
         captureRequest.requestBody({});
         const capture = await paypalClient.execute(captureRequest);
-
+        console.log("📦 [paypalSuccess] Résultat de la capture PayPal :", capture.result);
+        
         if (capture.result.status !== 'COMPLETED') {
+            console.log("❌ [paypalSuccess] Statut de capture invalide :", capture.result.status);
             return res.status(400).json({
-                message: "Le paiement n'a pas été complété."
+                message: "Le paiement n'a pas été complété.",
+                status: capture.result.status,
+                details: capture.result,
             });
         }
-
-        // 3) Vérifier encore une fois que l'email n'existe pas
-        const { nom, prenom, email, mot_de_passe, tel, pays_residence, role } =
-            req.session.pendingUser;
-
+        console.log("✅ [paypalSuccess] Paiement PayPal COMPLETED");
+        
+        // 5) Création finale de l'utilisateur
+        const { nom, prenom, email, mot_de_passe, tel, pays_residence, role } = req.session.pendingUser;
+        console.log("🔍 [paypalSuccess] Dernière vérification d'unicité de l'email :", email);
         const existingUser = await User.findOne({ email });
         if (existingUser) {
-            // Nettoyer la session
+            console.log("❌ [paypalSuccess] Email déjà utilisé (après capture) :", email);
             delete req.session.pendingUser;
             delete req.session.pendingOrderId;
-            return res.status(400).json({
-                message: "Cet email est déjà utilisé."
-            });
+            return res.status(400).json({ message: "Cet email est déjà utilisé." });
         }
-
-        // 4) Créer définitivement l'utilisateur en base
+        console.log("✅ [paypalSuccess] Email toujours disponible :", email);
+        
         const newUser = await User.create({
             nom,
             prenom,
@@ -206,17 +271,27 @@ module.exports.paypalSuccess = asyncHandler(async (req, res) => {
             pays_residence,
             role,
             paymentStatus: 'completed',
-            paypalOrderId: orderId
+            paypalOrderId: orderId,
+            paypalCaptureId: capture.result.purchase_units?.[0]?.payments?.captures?.[0]?.id,
         });
-
-        // 5) Nettoyer la session
+        console.log("💾 [paypalSuccess] Nouvel utilisateur créé :", {
+            id: newUser._id,
+            email: newUser.email,
+            paypalOrderId: newUser.paypalOrderId,
+            paypalCaptureId: newUser.paypalCaptureId
+        });
+        
+        // 6) Nettoyage de la session
         delete req.session.pendingUser;
         delete req.session.pendingOrderId;
-
-        // 6) Générer un token JWT et renvoyer la réponse
+        console.log("🧹 [paypalSuccess] Session nettoyée (pendingUser et pendingOrderId supprimés)");
+        
+        // 7) Génération du token JWT et réponse
         const token = signToken(newUser._id);
-
-        res.status(201).json({
+        console.log("🔑 [paypalSuccess] Token JWT généré :", token);
+        const paymentCapture = capture.result.purchase_units?.[0]?.payments?.captures?.[0];
+        return res.status(201).json({
+            success: true,
             message: "Inscription réussie et paiement validé.",
             user: {
                 id: newUser._id,
@@ -224,17 +299,22 @@ module.exports.paypalSuccess = asyncHandler(async (req, res) => {
                 prenom: newUser.prenom,
                 email: newUser.email,
                 role: newUser.role,
+                paymentStatus: newUser.paymentStatus,
             },
             token,
+            paymentDetails: {
+                orderId: orderId,
+                captureId: paymentCapture?.id,
+                amount: paymentCapture?.amount,
+                status: capture.result.status,
+            },
         });
-
     } catch (error) {
-        console.error('Erreur lors de la confirmation PayPal:', error);
-        res.status(500).json({
-            message: "Erreur lors de la validation du paiement."
-        });
+        console.error("❌ [paypalSuccess] Erreur lors de la capture PayPal :", error);
+        return res.status(500).json({ success: false, message: "Erreur lors de la validation du paiement." });
     }
 });
+
 
 // === Callback PayPal Cancel ===
 module.exports.paypalCancel = (req, res) => {

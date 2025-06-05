@@ -7,8 +7,8 @@ const router = express.Router();
 // === ROUTES PUBLIQUES ===
 router.post('/register', register); 
 router.post('/login', login);     
-router.get('/paypal-success', paypalSuccess); 
-router.get('/paypal-cancel', paypalCancel); 
+router.get('/paypalSuccess', paypalSuccess); 
+router.get('/paypalCancel', paypalCancel); 
 
 // === ROUTES PROTÉGÉES ===
 router.post('/logout', validateToken, logOut); 
