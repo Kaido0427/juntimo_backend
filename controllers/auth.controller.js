@@ -28,23 +28,24 @@ const signToken = (userId) => {
 };
 
 
+
 // === Inscription (avec paiement PayPal) ===
 module.exports.register = asyncHandler(async (req, res) => {
     console.log("🔔 [register] Début de la requête d'inscription");
-    
+
     // 1) Récupération des champs
     const { nom, prenom, email, mot_de_passe, tel, pays_residence, fraisInscription, devise } = req.body;
     console.log("📥 [register] Données reçues :", {
         nom, prenom, email, tel, pays_residence, fraisInscription, devise
     });
-    
+
     // 2) Validation des champs requis
     if (!nom || !prenom || !email || !mot_de_passe) {
         console.log("❌ [register] Champs requis manquants");
         return res.status(400).json({ message: "Nom, prénom, email et mot de passe sont requis." });
     }
     console.log("✅ [register] Champs obligatoires présents");
-    
+
     // 3) Validation du format de l'email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
@@ -52,21 +53,21 @@ module.exports.register = asyncHandler(async (req, res) => {
         return res.status(400).json({ message: "Format d'email invalide." });
     }
     console.log("✅ [register] Format d'email valide :", email);
-    
+
     // 4) Validation du mot de passe
     if (mot_de_passe.length < 8) {
         console.log("❌ [register] Mot de passe trop court (longueur =", mot_de_passe.length, ")");
         return res.status(400).json({ message: "Le mot de passe doit contenir au moins 8 caractères." });
     }
     console.log("✅ [register] Mot de passe accepté (longueur =", mot_de_passe.length, ")");
-    
+
     // 5) Vérification de la configuration PayPal
     if (!paypalClient) {
         console.log("❌ [register] paypalClient non configuré");
         return res.status(500).json({ message: "Configuration PayPal manquante." });
     }
     console.log("✅ [register] paypalClient configuré");
-    
+
     try {
         // 6) Vérification de l'unicité de l'email
         const existingUser = await User.findOne({ email: email.toLowerCase() });
@@ -76,13 +77,13 @@ module.exports.register = asyncHandler(async (req, res) => {
             return res.status(400).json({ message: "Cet email est déjà utilisé." });
         }
         console.log("✅ [register] Email disponible :", email.toLowerCase());
-        
+
         // 7) Hashage du mot de passe
         const saltRounds = 12;
         console.log("🔒 [register] Hashage du mot de passe (saltRounds =", saltRounds, ")");
         const hashedPassword = await bcrypt.hash(mot_de_passe, saltRounds);
         console.log("✅ [register] Mot de passe hashé :", hashedPassword);
-        
+
         // 8) Préparation de la commande PayPal
         const amountValue = fraisInscription || '50.00';
         const currency = devise || 'USD';
@@ -91,7 +92,7 @@ module.exports.register = asyncHandler(async (req, res) => {
             console.log("❌ [register] Montant invalide :", amountValue);
             return res.status(400).json({ message: "Montant des frais invalide." });
         }
-        
+
         const baseUrl = process.env.BASE_URL;
         const orderRequest = {
             intent: 'CAPTURE',
@@ -110,14 +111,14 @@ module.exports.register = asyncHandler(async (req, res) => {
             },
         };
         console.log("📦 [register] OrderRequest PayPal préparé :", orderRequest);
-        
+
         // 9) Création de la commande PayPal
         const request = new paypal.orders.OrdersCreateRequest();
         request.requestBody(orderRequest);
         console.log("🚀 [register] Envoi de la requête de création de commande PayPal");
         const order = await paypalClient.execute(request);
         console.log("✅ [register] Commande PayPal créée :", order.result.id);
-        
+
         // 10) Sauvegarde dans la session
         if (!req.session) {
             console.log("❌ [register] Problème de session : req.session absent");
@@ -147,7 +148,7 @@ module.exports.register = asyncHandler(async (req, res) => {
             return res.status(500).json({ message: "Impossible de récupérer le lien PayPal." });
         }
         console.log("✅ [register] Lien d'approbation PayPal obtenu :", approveLink);
-        
+
         // 12) Réponse au front
         console.log("📤 [register] Réponse envoyée au front avec approveLink et orderId");
         res.status(200).json({
@@ -157,7 +158,7 @@ module.exports.register = asyncHandler(async (req, res) => {
             message: "Commande PayPal créée. Redirigez l'utilisateur pour le paiement.",
         });
 
-        
+
     } catch (error) {
         console.error("❌ [register] Erreur lors de l'inscription :", error);
         return res.status(500).json({ success: false, message: "Erreur interne." });
@@ -169,12 +170,12 @@ module.exports.paypalSuccess = asyncHandler(async (req, res) => {
     console.log("🔔 [paypalSuccess] Début du callback PayPal Success");
     console.log("🔑 [paypalSuccess] SessionID reçue :", req.sessionID);
 
-    
+
     // 1) Récupération des paramètres PayPal
     const orderId = req.query.token || req.query.paymentId || req.query.orderID || req.query.id;
     console.log("📥 [paypalSuccess] Paramètres reçus :", req.query);
     console.log("🎯 [paypalSuccess] orderId extrait :", orderId);
-    
+
     if (!orderId) {
         console.log("❌ [paypalSuccess] orderId manquant dans les paramètres PayPal");
         return res.status(400).json({
@@ -183,7 +184,7 @@ module.exports.paypalSuccess = asyncHandler(async (req, res) => {
             expectedParams: ['token', 'paymentId', 'orderID', 'id'],
         });
     }
-    
+
     // 2) Vérification de la session et de l'orderId en session
     console.log("🔍 [paypalSuccess] Vérification de la session et pendingOrderId en session");
     if (!req.session || !req.session.pendingOrderId) {
@@ -213,7 +214,7 @@ module.exports.paypalSuccess = asyncHandler(async (req, res) => {
         });
     }
     console.log("✅ [paypalSuccess] orderId correspond à la session");
-    
+
     // 3) Vérification de l'âge de la session (30 min max)
     const sessionAge = new Date() - new Date(req.session.pendingUser?.createdAt || 0);
     console.log("⏱️ [paypalSuccess] Âge de la session (ms) :", sessionAge);
@@ -227,7 +228,7 @@ module.exports.paypalSuccess = asyncHandler(async (req, res) => {
         });
     }
     console.log("✅ [paypalSuccess] Session toujours valide (age <30min)");
-    
+
     // 4) Capture du paiement PayPal
     if (!paypalClient) {
         console.log("❌ [paypalSuccess] paypalClient non configuré");
@@ -239,7 +240,7 @@ module.exports.paypalSuccess = asyncHandler(async (req, res) => {
         captureRequest.requestBody({});
         const capture = await paypalClient.execute(captureRequest);
         console.log("📦 [paypalSuccess] Résultat de la capture PayPal :", capture.result);
-        
+
         if (capture.result.status !== 'COMPLETED') {
             console.log("❌ [paypalSuccess] Statut de capture invalide :", capture.result.status);
             return res.status(400).json({
@@ -249,7 +250,7 @@ module.exports.paypalSuccess = asyncHandler(async (req, res) => {
             });
         }
         console.log("✅ [paypalSuccess] Paiement PayPal COMPLETED");
-        
+
         // 5) Création finale de l'utilisateur
         const { nom, prenom, email, mot_de_passe, tel, pays_residence, role } = req.session.pendingUser;
         console.log("🔍 [paypalSuccess] Dernière vérification d'unicité de l'email :", email);
@@ -261,7 +262,7 @@ module.exports.paypalSuccess = asyncHandler(async (req, res) => {
             return res.status(400).json({ message: "Cet email est déjà utilisé." });
         }
         console.log("✅ [paypalSuccess] Email toujours disponible :", email);
-        
+
         const newUser = await User.create({
             nom,
             prenom,
@@ -280,12 +281,12 @@ module.exports.paypalSuccess = asyncHandler(async (req, res) => {
             paypalOrderId: newUser.paypalOrderId,
             paypalCaptureId: newUser.paypalCaptureId
         });
-        
+
         // 6) Nettoyage de la session
         delete req.session.pendingUser;
         delete req.session.pendingOrderId;
         console.log("🧹 [paypalSuccess] Session nettoyée (pendingUser et pendingOrderId supprimés)");
-        
+
         // 7) Génération du token JWT et réponse
         const token = signToken(newUser._id);
         console.log("🔑 [paypalSuccess] Token JWT généré :", token);
@@ -380,6 +381,38 @@ module.exports.login = asyncHandler(async (req, res) => {
         });
     }
 });
+
+module.exports.createAdmin = asyncHandler(async (req, res) => {
+    const defaultEmail = process.env.DEFAULT_ADMIN_EMAIL;
+    const defaultPassword = process.env.DEFAULT_ADMIN_PASSWORD;
+
+    const adminEmail = defaultEmail.trim().toLowerCase();
+
+    // Si l’admin existe déjà, on ne fait rien
+    const existing = await User.findOne({ email: defaultEmail });
+    if (existing) {
+        return;
+    }
+
+    // Sinon, on le crée avec le rôle "admin"
+    const hashed = await bcrypt.hash(defaultPassword, 12);
+    await User.create({
+        nom: 'Admin',
+        prenom: 'Juntimo',
+        email: adminEmail,
+        mot_de_passe: hashed,
+        tel: '010000000',
+        pays_residence: "juntimo",
+        role: 'admin',
+        createdAt: new Date(),
+    });
+    console.log(`🔐 Administrateur par défaut créé : ${defaultEmail}`);
+    return res.status(201).json({
+        success: true,
+        message: 'Administrateur créé avec succès.',
+    });
+}
+);
 
 // === Déconnexion ===
 module.exports.logOut = asyncHandler(async (req, res) => {

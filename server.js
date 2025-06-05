@@ -31,6 +31,8 @@ app.get('/', (req, res) => {
 
 // Routes principales
 app.use('/auth', require('./routes/auth.routes'));
+app.use('/bien', require('./routes/bien.routes'));
+app.use('/projet', require('./routes/projet.routes'));
 
 
 app.use(errorHandler);
@@ -38,6 +40,4 @@ app.use(errorHandler);
 
 app.listen(port, () => {
   console.log(`🚀 Le serveur a démarré au port ${port}`);
-  console.log(`📊 Sessions stockées en MongoDB: ${process.env.MONGODB_URI ? '✅' : '❌'}`);
-  console.log(`🔐 Session secret configuré: ${process.env.SESSION_SECRET ? '✅' : '❌ (utilise le défaut)'}`);
 });
