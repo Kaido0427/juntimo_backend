@@ -12,6 +12,13 @@ const beneficeAnnuelSchema = new mongoose.Schema({
 }, { _id: false });
 
 const projetSchema = new mongoose.Schema({
+  // Référence au Bien associé
+  bienId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Bien',
+    required: true
+  },
+
   titre: {
     type: String,
     required: true,
@@ -38,11 +45,25 @@ const projetSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
-  mensualite: {
+  // Nouveaux champs ajoutés
+  valeurTotaleProjet: {
     type: Number,
     required: true,
     min: 0
   },
+  participantsActuels: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 100
+  },
+
+  mensualiteParParticipant: {  
+    type: Number,
+    min: 0,
+    default: 0
+  },
+
   mensualiteTotaleAPayer: {
     type: Number,
     required: true,
