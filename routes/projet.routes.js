@@ -9,7 +9,7 @@ const {
 } = require('../controllers/projet.controller');
 
 const validateToken = require('../middlewares/validateTokenHandler');
-
+ 
 router.use(validateToken);
 
 // Routes protégées
