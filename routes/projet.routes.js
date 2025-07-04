@@ -10,11 +10,12 @@ const {
 
 const validateToken = require('../middlewares/validateTokenHandler');
  
+router.get('/allProjects', getProjets);
 router.use(validateToken);
 
 // Routes protégées
 router.post('/create', createProjet);
-router.get('/allProjects', getProjets);
+
 router.get('/oneProject/:id', getProjet);
 router.put('/update/:id', updateProjet);
 router.delete('/delete/:id', deleteProjet);
